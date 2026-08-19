@@ -1,0 +1,392 @@
+/* Friendship Loom — a weaver's workbench.
+ * Linen ground, stitched panel seams, floss-bobbin chips; the thread colors
+ * themselves are the only loud thing on the page. */
+
+:root {
+  --linen: #efece4;
+  --panel: #fbfaf6;
+  --panel-deep: #f4f1e9;
+  --ink: #2a251f;
+  --muted: #8d8375;
+  --seam: #d9d2c2;
+  --seam-dark: #bfb6a1;
+  --accent: #b23a5e;
+  --accent-soft: #f3dde4;
+  --ok: #3e6b4f;
+  --err: #c23434;
+  --radius: 10px;
+  --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --mono: "Spline Sans Mono", Consolas, monospace;
+  --body: "Segoe UI", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--body);
+  font-size: 14px;
+  color: var(--ink);
+  background:
+    repeating-linear-gradient(0deg, transparent 0 23px, rgba(141, 131, 117, 0.05) 23px 24px),
+    repeating-linear-gradient(90deg, transparent 0 23px, rgba(141, 131, 117, 0.05) 23px 24px),
+    var(--linen);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ───────── masthead ───────── */
+
+.masthead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 18px;
+  border-bottom: 1px dashed var(--seam-dark);
+  background: var(--panel);
+}
+
+.mast-title { display: flex; align-items: baseline; gap: 12px; }
+
+.mast-knot { width: 34px; height: 22px; align-self: center; }
+
+.masthead h1 {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.mast-sub { color: var(--muted); font-size: 13px; }
+
+.mast-actions { display: flex; gap: 8px; }
+
+/* ───────── layout ───────── */
+
+.workbench {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 268px minmax(320px, 1.1fr) minmax(360px, 1fr);
+  gap: 14px;
+  padding: 14px;
+  min-height: 0;
+}
+
+.panel { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+
+.side { overflow-y: auto; gap: 12px; padding-right: 2px; }
+
+.center, .right {
+  background: var(--panel);
+  border: 1px dashed var(--seam-dark);
+  border-radius: var(--radius);
+  padding: 12px;
+  gap: 8px;
+}
+
+/* stitched card */
+.card {
+  background: var(--panel);
+  border: 1px dashed var(--seam-dark);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin: 0 0 12px;
+}
+.card:last-child { margin-bottom: 0; }
+
+/* woven clothing-tag section labels */
+.tag {
+  display: inline-block;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 3px;
+  padding: 2px 8px 3px;
+  margin: 0 0 10px;
+}
+summary.tag { cursor: pointer; user-select: none; }
+
+.hint { color: var(--muted); font-size: 12px; line-height: 1.45; margin: 6px 0; }
+
+.lbl { color: var(--muted); font-size: 12px; min-width: 52px; }
+
+.mono { font-family: var(--mono); }
+
+.row-line { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+.row-line.check { gap: 7px; cursor: pointer; }
+
+/* ───────── controls ───────── */
+
+.btn, .tool, .mini, .select {
+  font-family: var(--body);
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--panel-deep);
+  border: 1px solid var(--seam-dark);
+  border-radius: 7px;
+  padding: 5px 11px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, transform 0.06s;
+}
+.btn:hover, .tool:hover, .mini:hover, .select:hover { background: #ece7da; border-color: var(--muted); }
+.btn:active, .tool:active, .mini:active { transform: translateY(1px); }
+.btn:focus-visible, .tool:focus-visible, .mini:focus-visible,
+.select:focus-visible, input:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover { background: #9c3153; }
+.btn.danger:hover { border-color: var(--err); color: var(--err); }
+
+.mini { padding: 2px 9px; font-size: 15px; line-height: 1.2; }
+
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--panel-deep);
+  border-radius: 7px;
+  padding: 2px 4px;
+}
+.stepper .mono { min-width: 24px; text-align: center; font-weight: 600; }
+.stepper .mini { border: none; background: transparent; }
+.stepper .num {
+  width: 48px;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font-size: 14px;
+  padding: 2px 0;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.stepper .num::-webkit-outer-spin-button,
+.stepper .num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+.select { padding: 4px 6px; }
+
+.btn-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.btn-row.end { justify-content: flex-end; margin-top: 12px; }
+
+/* ───────── strand bobbins ───────── */
+
+.strand-list { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 8px; }
+
+.bobbin {
+  position: relative;
+  width: 26px;
+  height: 38px;
+  padding: 0;
+  appearance: none;
+  border-radius: 5px;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  box-shadow: inset 0 -13px 0 rgba(255, 255, 255, 0.55), inset 0 -14px 0 rgba(0, 0, 0, 0.12);
+  touch-action: none;   /* drag-to-reorder needs the gesture */
+  user-select: none;
+  -webkit-user-select: none;
+}
+.bobbin.dragging {
+  opacity: 0.7;
+  transform: scale(1.12);
+  box-shadow: 0 4px 12px rgba(42, 37, 31, 0.35),
+    inset 0 -13px 0 rgba(255, 255, 255, 0.55), inset 0 -14px 0 rgba(0, 0, 0, 0.12);
+}
+.bobbin:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.bobbin::after {
+  /* paper band, like a floss skein label */
+  content: attr(data-n);
+  position: absolute;
+  left: -1px; right: -1px; bottom: 1px;
+  height: 12px;
+  font-family: var(--mono);
+  font-size: 9px;
+  line-height: 12px;
+  text-align: center;
+  color: var(--ink);
+}
+
+/* strand color popover */
+.color-pop {
+  position: fixed;
+  z-index: 60;
+  width: 196px;
+  background: var(--panel);
+  border: 1px dashed var(--seam-dark);
+  border-radius: 10px;
+  padding: 10px;
+  box-shadow: 0 12px 34px rgba(42, 37, 31, 0.28);
+}
+.pop-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 7px;
+  justify-items: center;
+}
+.pop-custom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.pop-custom input {
+  width: 44px;
+  height: 26px;
+  padding: 1px;
+  border: 1px solid var(--seam);
+  border-radius: 5px;
+  background: var(--panel-deep);
+  cursor: pointer;
+}
+
+/* ───────── canvas & tools ───────── */
+
+.toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+.tools { display: flex; gap: 5px; }
+
+.tool.active { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+
+.palette { display: flex; gap: 5px; flex-wrap: wrap; }
+
+.chip {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  padding: 0;
+}
+.chip.active { outline: 2px solid var(--ink); outline-offset: 2px; }
+.chip.auto {
+  background:
+    repeating-linear-gradient(45deg, transparent 0 4px, rgba(141, 131, 117, 0.35) 4px 6px),
+    var(--panel);
+}
+
+.zoom { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; margin-left: auto; }
+.zoom input { width: 90px; accent-color: var(--accent); }
+
+.canvas-hint { margin: 2px 0 6px; }
+
+.scroll-wrap {
+  flex: 1;
+  min-height: 120px;
+  overflow: auto;
+  background: var(--panel-deep);
+  border: 1px solid var(--seam);
+  border-radius: 8px;
+}
+.scroll-wrap.small { flex: 0 0 auto; max-height: 150px; }
+.scroll-wrap.grow { flex: 1; }
+
+#canvas { display: block; touch-action: none; cursor: crosshair; }
+#preview, #diagram { display: block; }
+
+/* ───────── right panel ───────── */
+
+.statsbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+.stat {
+  font-size: 12px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--panel-deep);
+  border: 1px solid var(--seam);
+  color: var(--muted);
+}
+.stat.ok { color: var(--ok); border-color: #b9cbbf; background: #eaf1ec; }
+.stat.bad { color: var(--err); border-color: #e3b8b8; background: #f9ecec; }
+
+.preview-fold { margin: 2px 0; }
+
+.diagram-head { display: flex; align-items: center; gap: 10px; }
+.diagram-head .tag { margin-bottom: 0; }
+
+/* ───────── legend ───────── */
+
+.legend { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+.legend .lg { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink); }
+.legend svg { flex: 0 0 auto; }
+
+/* ───────── ASCII dialog ───────── */
+
+.dlg {
+  border: 1px dashed var(--seam-dark);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--ink);
+  padding: 18px;
+  width: min(520px, 92vw);
+  box-shadow: 0 18px 50px rgba(42, 37, 31, 0.25);
+}
+.dlg::backdrop { background: rgba(42, 37, 31, 0.35); }
+
+#ascii-text {
+  width: 100%;
+  resize: vertical;
+  background: var(--panel-deep);
+  border: 1px solid var(--seam);
+  border-radius: 7px;
+  padding: 8px;
+  font-size: 13px;
+  line-height: 1.25;
+  letter-spacing: 0.35em; /* chars ≈ knot spacing, so art previews truer */
+}
+
+.ascii-map { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.ascii-map .map-row { display: flex; align-items: center; gap: 8px; }
+.ascii-map .map-char {
+  font-family: var(--mono);
+  font-weight: 600;
+  width: 26px;
+  height: 26px;
+  line-height: 26px;
+  text-align: center;
+  background: var(--panel-deep);
+  border: 1px solid var(--seam);
+  border-radius: 5px;
+}
+
+/* ───────── responsive ───────── */
+
+@media (max-width: 1100px) {
+  body { overflow: auto; }
+  .workbench { display: flex; flex-direction: column; }
+  .panel { min-height: auto; flex: none; }
+  .side { overflow-y: visible; }
+  .center { min-height: 480px; }
+  .right { min-height: 520px; }
+  .scroll-wrap { max-height: 60vh; }
+}
+
+@media (max-width: 640px) {
+  .masthead { flex-wrap: wrap; padding: 8px 12px; gap: 8px; }
+  .mast-title { flex-wrap: wrap; gap: 8px; row-gap: 0; }
+  .masthead h1 { font-size: 19px; }
+  .mast-sub { flex-basis: 100%; font-size: 12px; }
+  .workbench { padding: 10px; gap: 10px; }
+  .center, .right, .card { padding: 10px; }
+  .toolbar { gap: 8px; }
+  .zoom input { width: 70px; }
+  .btn, .tool { padding: 6px 10px; } /* comfortable touch targets */
+  .chip { width: 28px; height: 28px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}

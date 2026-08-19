@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#efece4">
+<meta name="description" content="Draw pixel art, get a friendship bracelet knot pattern — an interactive weaving pattern editor and solver.">
+<title>Friendship Loom — pattern editor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Spline+Sans+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='5' cy='8' r='4' fill='%23b23a5e'/%3E%3Ccircle cx='11' cy='8' r='4' fill='%233a7bd6' fill-opacity='.85'/%3E%3C/svg%3E">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="mast-title">
+    <svg class="mast-knot" viewBox="0 0 34 22" aria-hidden="true">
+      <path d="M3 11 Q 10 2 17 11 T 31 11" fill="none" stroke="#b23a5e" stroke-width="3.4" stroke-linecap="round"/>
+      <path d="M3 11 Q 10 20 17 11 T 31 11" fill="none" stroke="#3a7bd6" stroke-width="3.4" stroke-linecap="round"/>
+    </svg>
+    <h1>Friendship Loom</h1>
+    <span class="mast-sub">draw a pattern &rarr; get the knots</span>
+  </div>
+  <div class="mast-actions">
+    <button id="btn-ascii" class="btn" title="Stamp ASCII art onto the canvas">ASCII art</button>
+    <button id="btn-save" class="btn" title="Download pattern as JSON">Save</button>
+    <button id="btn-load" class="btn" title="Load a saved pattern JSON">Load</button>
+    <input id="file-load" type="file" accept=".json,application/json" hidden>
+  </div>
+</header>
+
+<main class="workbench">
+
+  <!-- ═══════════ left: setup ═══════════ -->
+  <aside class="panel side">
+    <section class="card">
+      <h2 class="tag">Threads</h2>
+      <div class="row-line">
+        <span class="lbl">strands</span>
+        <div class="stepper">
+          <button id="strand-minus" class="mini" aria-label="fewer strands">&minus;</button>
+          <span id="strand-count" class="mono">8</span>
+          <button id="strand-plus" class="mini" aria-label="more strands">+</button>
+        </div>
+        <select id="preset" class="select" title="Starting thread presets">
+          <option value="">preset&hellip;</option>
+          <option value="rainbow">Rainbow</option>
+          <option value="berry">Berry duo</option>
+          <option value="ocean">Ocean</option>
+          <option value="flame">Flame</option>
+          <option value="forest">Forest</option>
+          <option value="mono">Ink + cream</option>
+        </select>
+      </div>
+      <p class="hint">Click a bobbin to recolor it, drag to reorder. This is the order the threads hang before row 1.</p>
+      <div id="strand-list" class="strand-list"></div>
+    </section>
+
+    <section class="card">
+      <h2 class="tag">Pattern</h2>
+      <div class="row-line">
+        <span class="lbl">rows</span>
+        <div class="stepper">
+          <button id="rows-minus" class="mini" aria-label="fewer rows">&minus;</button>
+          <input id="rows-count" class="num mono" type="number" min="2" max="100" inputmode="numeric" value="20" aria-label="number of rows">
+          <button id="rows-plus" class="mini" aria-label="more rows">+</button>
+        </div>
+        <button id="btn-clear" class="btn danger" title="Clear all painted cells">Clear</button>
+      </div>
+      <div class="row-line">
+        <span class="lbl">first row</span>
+        <button id="btn-parity" class="btn" title="Toggle whether row 1 knots strands 1-2, 3-4… or 2-3, 4-5…">knots 1&middot;2 first</button>
+      </div>
+      <label class="row-line check">
+        <input type="checkbox" id="chk-symmetry">
+        <span>mirror painting (left&harr;right)</span>
+      </label>
+    </section>
+
+    <section class="card">
+      <h2 class="tag">Knot legend</h2>
+      <div id="legend" class="legend"></div>
+      <p class="hint">The circle is the color the knot shows. Straight arrows cross the threads; hooked arrows bounce back (threads keep their sides).</p>
+    </section>
+
+    <section class="card">
+      <h2 class="tag">Export</h2>
+      <div class="btn-row">
+        <button id="btn-svg" class="btn">Diagram SVG</button>
+        <button id="btn-png" class="btn">Diagram PNG</button>
+        <button id="btn-txt" class="btn">Instructions</button>
+      </div>
+    </section>
+  </aside>
+
+  <!-- ═══════════ center: paint canvas ═══════════ -->
+  <section class="panel center">
+    <div class="toolbar">
+      <div class="tools" role="toolbar" aria-label="painting tools">
+        <button id="tool-brush" class="tool active" title="Brush (B)">Brush</button>
+        <button id="tool-fill"  class="tool" title="Fill region (F)">Fill</button>
+        <button id="tool-erase" class="tool" title="Erase to auto (E)">Erase</button>
+        <button id="btn-undo" class="tool" title="Undo (Ctrl+Z)">Undo</button>
+      </div>
+      <div id="palette" class="palette" aria-label="paint colors"></div>
+      <label class="zoom"><span>zoom</span><input id="zoom-canvas" type="range" min="0.5" max="2" step="0.1" value="1"></label>
+    </div>
+    <p class="hint canvas-hint">Paint the knots you want. Unpainted cells are &ldquo;auto&rdquo; &mdash; the solver picks whatever weaves cleanly. Cells it cannot reach get a red stitch.</p>
+    <div class="scroll-wrap" id="canvas-wrap">
+      <svg id="canvas" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+  </section>
+
+  <!-- ═══════════ right: result ═══════════ -->
+  <section class="panel right">
+    <div class="statsbar">
+      <span id="stat-errors" class="stat ok">0 unreachable</span>
+      <span id="stat-bounce" class="stat" title="FB/BF bounce knots — the fewer, the tighter the weave">&hellip;</span>
+      <span id="stat-repeat" class="stat">&hellip;</span>
+      <span id="stat-time" class="stat mono"></span>
+    </div>
+    <details class="preview-fold" open>
+      <summary class="tag">Woven result</summary>
+      <div class="scroll-wrap small" id="preview-wrap">
+        <svg id="preview" xmlns="http://www.w3.org/2000/svg"></svg>
+      </div>
+    </details>
+    <div class="diagram-head">
+      <h2 class="tag">Knot diagram</h2>
+      <label class="zoom"><span>zoom</span><input id="zoom-diagram" type="range" min="0.5" max="2" step="0.1" value="1"></label>
+    </div>
+    <div class="scroll-wrap grow" id="diagram-wrap">
+      <svg id="diagram" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+  </section>
+</main>
+
+<!-- ═══════════ ASCII art dialog ═══════════ -->
+<dialog id="ascii-dialog" class="dlg">
+  <h2 class="tag">Stamp ASCII art</h2>
+  <p class="hint">Each character becomes a knot; spaces and dots stay &ldquo;auto&rdquo;. Art is centered on the canvas.</p>
+  <div class="row-line">
+    <span class="lbl">example</span>
+    <select id="ascii-example" class="select">
+      <option value="">pick&hellip;</option>
+      <option value="heart">Heart</option>
+      <option value="star">Star</option>
+      <option value="zigzag">Zigzag</option>
+      <option value="hi">"HI"</option>
+    </select>
+  </div>
+  <textarea id="ascii-text" class="mono" rows="10" spellcheck="false" placeholder="  XX  XX&#10; XXXXXXX&#10; XXXXXXX&#10;  XXXXX&#10;   XXX&#10;    X"></textarea>
+  <div id="ascii-map" class="ascii-map"></div>
+  <div class="btn-row end">
+    <button id="ascii-cancel" class="btn">Cancel</button>
+    <button id="ascii-stamp" class="btn primary">Stamp onto canvas</button>
+  </div>
+</dialog>
+
+<div id="color-pop" class="color-pop" hidden></div>
+
+<script src="solver.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
