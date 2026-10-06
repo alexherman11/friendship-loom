@@ -16,6 +16,13 @@
  * future rows. Each next-row knot sits between two adjacent current-row knots,
  * so next-row satisfiability decomposes into a chain over swap bits — solved
  * exactly per row with a k-best DP, wrapped in a beam search over rows.
+ *
+ * Wildcard strands: a starting strand given as null has no color yet. The
+ * solver treats it as a joker that can become any color, and BINDS it the
+ * first time a painted cell needs a color neither incoming thread has. Thread
+ * identities are tracked through the swaps so the binding lands on the right
+ * starting bobbin; wildcards never demanded get a default color at the end.
+ * The result's `strands` is the fully resolved starting order.
  */
 (function (root, factory) {
   if (typeof module !== 'undefined' && module.exports) module.exports = factory();
@@ -51,7 +58,8 @@
 
   // penalty that a next-row knot with target t cannot be tied from incoming colors X, Y
   function pen(t, X, Y) {
-    if (t == null || t === X || t === Y) return 0;
+    // a wildcard (null) thread can still become any color: no penalty
+    if (t == null || X == null || Y == null || t === X || t === Y) return 0;
     return 1 + Math.min(colorDist(t, X), colorDist(t, Y)) / 2000;
   }
 
@@ -151,7 +159,8 @@
     if (k === 0) return [{ vec: [], cost: 0 }];
     const model = buildChainCosts(order, pairs, info, nextPairs, nextTargets);
     const unaryB = model.unary.map(function (u, j) {
-      return [u[0] + (info[j].L !== info[j].R ? BOUNCE_W : 0), u[1]];
+      const bounce = info[j].L !== info[j].R && info[j].bind !== 3;
+      return [u[0] + (bounce ? BOUNCE_W : 0), u[1]];
     });
     const modelB = { unary: unaryB, pairw: model.pairw, constC: model.constC, k: k };
 
@@ -241,7 +250,9 @@
     if (maxQ < minQ) return 0;
 
     const supplyByColor = new Map(); // color -> [{col, used}]
+    const wild = [];                  // unbound wildcard threads: any color
     for (let c = 0; c < n; c++) {
+      if (order[c] == null) { wild.push({ col: c, used: false }); continue; }
       let arr = supplyByColor.get(order[c]);
       if (!arr) { arr = []; supplyByColor.set(order[c], arr); }
       arr.push({ col: c, used: false });
@@ -273,19 +284,24 @@
           threads[bestI].lo = a; threads[bestI].hi = a + 1; threads[bestI].lastQ = q;
           continue;
         }
-        // 2) claim the nearest unused real thread that can reach this cell
-        const supply = supplyByColor.get(t);
-        let bestS = -1, bestDist = Infinity;
-        if (supply) {
-          for (const s of supply) {
+        // 2) claim the nearest unused real thread that can reach this cell;
+        //    failing that, the nearest unused wildcard (it would be bound to t)
+        const claim = function (supply) {
+          let bestS = -1, bestDist = Infinity;
+          if (!supply) return false;
+          for (let i = 0; i < supply.length; i++) {
+            const s = supply[i];
             if (s.used) continue;
             const dist = s.col < a ? a - s.col : (s.col > a + 1 ? s.col - (a + 1) : 0);
-            if (dist <= q - 1 && dist < bestDist) { bestDist = dist; bestS = supply.indexOf(s); }
+            if (dist <= q - 1 && dist < bestDist) { bestDist = dist; bestS = i; }
           }
-        }
-        if (bestS >= 0) {
+          if (bestS < 0) return false;
           supply[bestS].used = true;
           threads.push({ lo: a, hi: a + 1, lastQ: q });
+          return true;
+        };
+        if (claim(supplyByColor.get(t)) || claim(wild)) {
+          // covered
         } else if (q >= minQ) {
           // an estimated real future error (0.9: slight discount for
           // heuristic imprecision); q < minQ cells are already counted
@@ -298,23 +314,70 @@
   }
 
   /* Per-knot analysis for a row: which side must show, and the error if neither
-   * thread matches the target. */
+   * thread matches the target. L/R are the colors AFTER any wildcard binding
+   * this knot forces; `bind` says which incoming thread gets bound to the
+   * target: 0 none, 1 left, 2 right, 3 either (both wildcards — the swap bit
+   * decides, and both choices are crosses: see solveOnce). A wildcard is only
+   * bound when the other thread cannot show the target, so it stays free for
+   * as long as possible. */
   function rowInfo(order, rowTarget, pairs) {
     return pairs.map(function (c, j) {
-      const L = order[c], R = order[c + 1];
+      let L = order[c], R = order[c + 1];
       const t = (rowTarget && rowTarget[j] !== undefined) ? rowTarget[j] : null;
-      let side, err = 0, dd = 0;
+      let side, err = 0, dd = 0, bind = 0;
       if (t == null) side = 'free';
       else if (t === L) side = 'L';
       else if (t === R) side = 'R';
+      else if (L == null && R == null) { side = 'L'; bind = 3; L = t; }
+      else if (L == null) { side = 'L'; bind = 1; L = t; }
+      else if (R == null) { side = 'R'; bind = 2; R = t; }
       else {
         err = 1;
         const dl = colorDist(t, L), dr = colorDist(t, R);
         dd = Math.min(dl, dr);
         side = dl <= dr ? 'L' : 'R';
       }
-      return { L, R, t, side, err, dd };
+      return { L, R, t, side, err, dd, bind };
     });
+  }
+
+  /* Re-weave emitted knots from a concrete starting order: shown colors and
+   * per-row orders with every wildcard resolved. */
+  function replay(strands, knotsIn) {
+    let order = strands.slice();
+    const orders = [order.slice()];
+    const knots = knotsIn.map(function (row) {
+      const next = order.slice();
+      const out = row.map(function (k) {
+        const c = k.col, L = order[c], R = order[c + 1];
+        const shown = (k.type === 'f' || k.type === 'fb') ? L : R;
+        if (k.type === 'f' || k.type === 'b') { next[c] = R; next[c + 1] = L; }
+        return { col: c, type: k.type, shown, target: k.target, err: k.err };
+      });
+      order = next;
+      orders.push(order.slice());
+      return out;
+    });
+    return { knots, orders, endOrder: order };
+  }
+
+  /* Color for wildcards the design never asked for: the most painted color,
+   * else the first fixed strand, else cream. */
+  function pickDefaultColor(strands, target) {
+    const count = new Map();
+    let best = null, bestN = 0;
+    for (const row of target || []) {
+      if (!row) continue;
+      for (const t of row) {
+        if (t == null) continue;
+        const k = (count.get(t) || 0) + 1;
+        count.set(t, k);
+        if (k > bestN) { bestN = k; best = t; }
+      }
+    }
+    if (best != null) return best;
+    for (const c of strands) if (c != null) return c;
+    return '#f7f3eb';
   }
 
   /* Second-order lookahead: given the order entering row rNext, the best
@@ -331,10 +394,12 @@
     return best.length ? best[0].cost : 0;
   }
 
-  /* strands: array of hex colors (start order, left to right)
+  /* strands: array of hex colors (start order, left to right); null = wildcard
+   *          strand whose color the solver picks from the design
    * rows:    number of knot rows
    * target:  target[r][j] = hex color or null (solver's choice)
-   * Returns { knots, orders, errors, endOrder, repeats }
+   * Returns { strands, knots, orders, errors, endOrder, repeats }
+   *   strands      = resolved starting colors (wildcards filled in)
    *   knots[r][j]  = { col, type: 'f'|'b'|'fb'|'bf', shown, target, err }
    *   orders[r]    = colors left-to-right BEFORE row r (orders[rows] = final)
    */
@@ -345,7 +410,10 @@
     const horizon = opts.horizon || 12;
     const n = strands.length;
     const off = opts.parityOffset || 0;
-    const start = strands.slice();
+    const start = strands.map(function (c) { return c == null ? null : c; });
+    const defaultColor = opts.defaultColor || pickDefaultColor(start, target);
+    const ids0 = [];
+    for (let i = 0; i < n; i++) ids0.push(i);
     const rng = mulberry32(opts.seed === undefined ? 0x5EED : opts.seed);
 
     // errors dominate; then estimated future errors; then color-mismatch
@@ -354,7 +422,10 @@
       return s.err + s.look + s.bounce * BOUNCE_W + s.dist / 2000;
     };
 
-    let beam = [{ order: start, err: 0, dist: 0, look: 0, bounce: 0, rowsOut: [], orders: [start] }];
+    // order: colors per column (null = unbound wildcard); ids: which starting
+    // strand sits in each column; bound: color per starting strand so far
+    let beam = [{ order: start, ids: ids0, bound: start.slice(),
+                  err: 0, dist: 0, look: 0, bounce: 0, rowsOut: [] }];
 
     for (let r = 0; r < rows; r++) {
       const pairs = pairStarts(n, (r + off) % 2);
@@ -371,26 +442,48 @@
 
         const vecs = kBestSwaps(st.order, pairs, info, nextPairs, nextTargets, branchK, samples, rng);
         for (const v of vecs) {
-          const order = st.order.slice();
+          const order = st.order.slice(), ids = st.ids.slice();
+          let bound = st.bound; // copied on first binding
           let rowBounce = 0;
           const knots = pairs.map(function (c, j) {
             const inf = info[j];
             let s = v.vec[j];
-            if (inf.L === inf.R) s = 1; // identical colors: canonical forward knot
-            else if (!s) rowBounce++;
-            const useL = inf.side !== 'R';
-            const type = useL ? (s ? 'f' : 'fb') : (s ? 'b' : 'bf');
-            const shown = useL ? inf.L : inf.R;
-            if (s) { order[c] = inf.R; order[c + 1] = inf.L; }
+            let type, shown;
+            if (inf.bind === 3) {
+              // two wildcards: the swap bit says which side the new color
+              // lands on, and either way a straight cross gets it there
+              // (bind left + forward, or bind right + backward)
+              bound = bound === st.bound ? bound.slice() : bound;
+              bound[ids[s ? c : c + 1]] = inf.t;
+              type = s ? 'f' : 'b';
+              shown = inf.t;
+              order[c] = s ? null : inf.t;
+              order[c + 1] = s ? inf.t : null;
+              s = 1;
+            } else {
+              if (inf.bind) {
+                bound = bound === st.bound ? bound.slice() : bound;
+                bound[ids[inf.bind === 1 ? c : c + 1]] = inf.t;
+              }
+              if (inf.L === inf.R) s = 1; // identical colors: canonical forward knot
+              else if (!s) rowBounce++;
+              const useL = inf.side !== 'R';
+              type = useL ? (s ? 'f' : 'fb') : (s ? 'b' : 'bf');
+              shown = useL ? inf.L : inf.R;
+              // written even without a swap: a binding may have just given
+              // one of these columns its color
+              order[c] = s ? inf.R : inf.L;
+              order[c + 1] = s ? inf.L : inf.R;
+            }
+            if (s) { const tmp = ids[c]; ids[c] = ids[c + 1]; ids[c + 1] = tmp; }
             return { col: c, type, shown, target: inf.t, err: inf.err };
           });
           const key = order.join('|');
           const cand = {
-            order, err: st.err + rowErr, dist: st.dist + rowDist,
+            order, ids, bound, err: st.err + rowErr, dist: st.dist + rowDist,
             look: v.cost, // cheap score now; deep score for survivors below
             bounce: st.bounce + rowBounce,
             rowsOut: st.rowsOut.concat([knots]),
-            orders: st.orders.concat([order]),
           };
           const prev = cands.get(key);
           if (!prev || score(cand) < score(prev) ||
@@ -422,19 +515,27 @@
       beam = pool.sort(byScore).slice(0, beamWidth);
     }
 
-    const startKey = start.join('|');
+    // resolve each survivor's starting order (wildcards never demanded get
+    // the default color) so the repeat preference compares real orders
+    for (const st of beam) {
+      st.strands = st.bound.map(function (c) { return c == null ? defaultColor : c; });
+      const endKey = st.ids.map(function (i) { return st.strands[i]; }).join('|');
+      st.repeats = endKey === st.strands.join('|');
+    }
     beam.sort(function (a, b) {
       return a.err - b.err || a.dist - b.dist || a.bounce - b.bounce ||
-        ((b.order.join('|') === startKey) ? 1 : 0) - ((a.order.join('|') === startKey) ? 1 : 0);
+        (b.repeats ? 1 : 0) - (a.repeats ? 1 : 0);
     });
     const best = beam[0];
+    const rp = replay(best.strands, best.rowsOut);
     return {
-      knots: best.rowsOut,
-      orders: best.orders,
+      strands: best.strands,
+      knots: rp.knots,
+      orders: rp.orders,
       errors: best.err,
       bounces: best.bounce,
-      endOrder: best.order,
-      repeats: best.order.join('|') === startKey,
+      endOrder: rp.endOrder,
+      repeats: best.repeats,
     };
   }
 
@@ -458,7 +559,7 @@
     for (const bw of [512, 2048]) {
       if (Date.now() - t0 > budget) break;
       const p = solveOnce(Object.assign({}, opts,
-        { target: achieved, horizon: 0, beamWidth: bw }));
+        { strands: best.strands, target: achieved, horizon: 0, beamWidth: bw }));
       if (p.errors !== 0 || p.bounces >= out.bounces) continue;
       const knots = p.knots.map(function (row, r) {
         return row.map(function (k, j) {
@@ -468,6 +569,7 @@
         });
       });
       out = {
+        strands: best.strands,
         knots,
         orders: p.orders,
         errors: best.errors, // identical achieved grid ⇒ identical mismatches
@@ -486,6 +588,8 @@
   function solve(opts) {
     const t0 = Date.now();
     const budget = opts.budgetMs || 6000;
+    opts = Object.assign({}, opts,
+      { defaultColor: opts.defaultColor || pickDefaultColor(opts.strands, opts.target) });
     let best = solveOnce(opts);
     if (opts.effort === 'fast') return best;
     if (best.errors === 0) return polish(best, opts, t0, budget);
@@ -528,9 +632,10 @@
         seed: 1000 + guard * 77,
       });
       if (prefixErr + sub.errors < best.errors) {
-        const startKey = opts.strands.join('|');
+        const startKey = best.strands.join('|');
         const knots = best.knots.slice(0, rStart).concat(sub.knots);
         best = {
+          strands: best.strands,
           knots,
           orders: best.orders.slice(0, rStart).concat(sub.orders),
           errors: prefixErr + sub.errors,
@@ -543,5 +648,5 @@
     return polish(best, opts, t0, budget);
   }
 
-  return { solve, solveOnce, pairStarts, colorDist };
+  return { solve, solveOnce, pairStarts, colorDist, replay };
 });

@@ -20,10 +20,18 @@ Run the solver test suite with `node test.js`.
 ## How to use
 
 1. **Threads** — set the strand count and click the bobbins to recolor each
-   starting strand (left to right, the order they hang before row 1).
-2. **Paint** — brush/fill knots on the canvas with any strand color. Unpainted
-   cells are *auto*: the solver weaves whatever is convenient there (shown as a
-   faint ghost). Or click **ASCII art** to stamp text art onto the canvas.
+   starting strand (left to right, the order they hang before row 1). Or set
+   bobbins to **auto** (the dashed chip in the color picker, or **All auto**):
+   the solver then picks their colors and effectively the starting order from
+   your drawing, so you never have to tinker with the order by hand. Auto
+   bobbins show the solver's pick faded with a `?`; **Lock in solved** turns
+   those picks into fixed colors.
+2. **Paint** — brush/fill knots on the canvas with any palette color. The
+   palette holds the bobbin colors plus anything already in the drawing; use
+   **+** to paint with a color no bobbin has yet (an auto bobbin will take it).
+   Unpainted cells are *auto*: the solver weaves whatever is convenient there
+   (shown as a faint ghost). Or click **ASCII art** to stamp text art onto the
+   canvas.
 3. **Read the result** — the right panel shows the woven look and the knot
    diagram: each circle is one knot, its fill is the color that shows, and the
    arrow is the knot to tie. Cells the solver cannot reach get a red stitch and
@@ -65,6 +73,16 @@ that. The remaining freedom is the swap bit, which only affects future rows.
 - If any cell still fails, an escalation ladder retries with wider beams and
   fresh seeds, then a **suffix repair** locks the clean prefix and re-solves
   from just above the first error.
+- **Auto strands**: a starting strand given as `null` is a wildcard. Inside the
+  beam search it is a joker — the lookahead treats it as matching any color —
+  and it is *bound* lazily, the first time a painted cell needs a color that
+  neither incoming thread has. Thread identities are tracked through every
+  swap so the binding lands on the right starting bobbin, and when both
+  threads of a knot are wildcards the swap bit decides which side the new
+  color lands on (both choices are straight crosses). Wildcards the design
+  never asks for take the most-painted color. The result's `strands` is the
+  resolved starting order; it is replayed so every intermediate order and
+  shown color is concrete.
 - **Diagonal preference**: bracelets weave tighter with straight crosses than
   with bounces ("double backs"), so every bounce pays a small penalty —
   calibrated so a full wall of bounces still costs less than one wrong pixel;
@@ -76,7 +94,7 @@ that. The remaining freedom is the swap bit, which only affects future rows.
   differ in far-future bounces can all be kept and compared.
 
 Measured behavior (`test.js`): exact reproduction of every weavable pattern up
-to 20 strands; patterns woven with only crossing knots come back with **zero**
+to 20 strands, also when every starting strand is left auto; patterns woven with only crossing knots come back with **zero**
 bounces (≤ 12 strands); on 30-strand *uniformly random* targets (an
 adversarial case unlike any drawing) ≥99.7% of knots; interactive pass on
 30×60 in under a second, typical drawings in tens of milliseconds. Genuinely

@@ -34,7 +34,8 @@ const ASCII_EXAMPLES = {
 };
 
 const state = {
-  strands: PRESETS.rainbow.slice(),
+  strands: PRESETS.rainbow.slice(),   // hex per bobbin, or null = auto (solver picks)
+  extra: [],                          // paint colors added beyond the bobbins
   rows: 20,
   startParity: 0,    // 0: row 1 knots strands 1-2, 3-4…  1: row 1 knots 2-3, 4-5…
   grid: [],          // grid[r][j] = hex | null
@@ -68,10 +69,36 @@ function rebuildGrid() {
   state.grid = g;
 }
 
-function distinctColors() {
+function hasAuto() { return state.strands.some((c) => c == null); }
+
+/* starting colors the solver settled on, if the solution is for this setup */
+function solvedStrands() {
+  const sol = state.solution;
+  return sol && sol.strands && sol.strands.length === state.strands.length ? sol.strands : null;
+}
+
+function gridColors() {
   const seen = [];
-  for (const c of state.strands) if (!seen.includes(c)) seen.push(c);
+  for (const row of state.grid) for (const c of row) if (c != null && !seen.includes(c)) seen.push(c);
   return seen;
+}
+
+/* paint palette: fixed bobbin colors, colors already in the drawing, and
+ * colors added with the + chip — so a design can be painted before any
+ * bobbin has a color */
+function paletteColors() {
+  const seen = [];
+  const add = (c) => { if (c != null && !seen.includes(c)) seen.push(c); };
+  state.strands.forEach(add);
+  gridColors().forEach(add);
+  state.extra.forEach(add);
+  if (!seen.length) add(FLOSS.ink);
+  return seen;
+}
+
+/* a palette color that only lives in `extra` can be removed again */
+function isRemovableExtra(col) {
+  return state.extra.includes(col) && !state.strands.includes(col) && !gridColors().includes(col);
 }
 
 function luminance(hex) {
@@ -84,7 +111,9 @@ const inkOn = (hex) => luminance(hex) > 0.55 ? '#2a251f' : '#ffffff';
 function colorLetters() {
   // letters A, B, C… per distinct color, like braceletbook diagrams
   const map = new Map();
-  distinctColors().forEach((c, i) => map.set(c, String.fromCharCode(65 + (i % 26))));
+  const all = paletteColors();
+  for (const c of solvedStrands() || []) if (!all.includes(c)) all.push(c);
+  all.forEach((c, i) => map.set(c, String.fromCharCode(65 + (i % 26))));
   return map;
 }
 
@@ -153,10 +182,17 @@ function renderCanvas() {
   svg.setAttribute('height', h * zoom);
 
   const parts = [];
-  // strand chips: starting order across the top
+  // strand chips: starting order across the top (auto bobbins show the
+  // solver's pick, dashed)
+  const solved = solvedStrands();
   state.strands.forEach((col, c) => {
     const x = CV.padX + c * CV.cw;
-    parts.push(`<circle cx="${x}" cy="16" r="8" fill="${col}" stroke="rgba(0,0,0,0.3)"/>`);
+    if (col != null) {
+      parts.push(`<circle cx="${x}" cy="16" r="8" fill="${col}" stroke="rgba(0,0,0,0.3)"/>`);
+    } else {
+      const pick = solved ? solved[c] : null;
+      parts.push(`<circle cx="${x}" cy="16" r="8" fill="${pick || '#e8e3d7'}" fill-opacity="${pick ? 0.55 : 1}" stroke="#8d8375" stroke-dasharray="2.5 2"/>`);
+    }
   });
   parts.push(`<line x1="${CV.padX - 12}" y1="30" x2="${w - CV.padX + 12}" y2="30" stroke="#d9d2c2" stroke-dasharray="3 4"/>`);
 
@@ -303,6 +339,7 @@ function runSolve(fast) {
   renderPreview();
   renderDiagram();
   renderCanvas();
+  updateBobbinGhosts();
 }
 
 function renderStats() {
@@ -319,6 +356,11 @@ function renderStats() {
   const rep = $('stat-repeat');
   rep.textContent = sol.repeats ? 'repeats seamlessly' : 'end order differs from start';
   rep.className = 'stat ' + (sol.repeats ? 'ok' : '');
+  const au = $('stat-auto');
+  const nAuto = state.strands.filter((c) => c == null).length;
+  au.hidden = nAuto === 0;
+  au.textContent = nAuto === state.strands.length ? 'start order chosen by solver'
+    : `${nAuto} strand color${nAuto > 1 ? 's' : ''} chosen by solver`;
   $('stat-time').textContent = `${Math.round(state.solveMs)} ms`;
 }
 
@@ -362,7 +404,8 @@ function renderDiagram() {
   const sol = state.solution;
   if (!sol) return;
   const svg = $('diagram');
-  const n = state.strands.length;
+  const strands = sol.strands || state.strands;
+  const n = strands.length;
   const rows = state.rows;
   const w = DG.mx * 2 + (n - 1) * DG.cw;
   const h = DG.mt + rows * DG.rh + 36;
@@ -397,7 +440,7 @@ function renderDiagram() {
 
   // threads
   for (let i = 0; i < n; i++) {
-    const col = state.strands[i];
+    const col = strands[i];
     const pts = [`${X(colOf[0][i])},${yB(0) - 10}`];
     for (let r = 0; r < rows; r++) {
       const cb = colOf[r][i];
@@ -427,14 +470,16 @@ function renderDiagram() {
     });
   }
 
-  // strand chips top (start order) and bottom (end order)
-  const chip = (c, col, y) => {
+  // strand chips top (start order) and bottom (end order); a dashed ring
+  // marks a starting color the solver chose
+  const chip = (c, col, y, auto) => {
     const x = X(c);
     return `<circle cx="${x}" cy="${y}" r="8.5" fill="${col}" stroke="rgba(0,0,0,0.35)"/>` +
+      (auto ? `<circle cx="${x}" cy="${y}" r="11" fill="none" stroke="#8d8375" stroke-width="1.2" stroke-dasharray="2.5 2"/>` : '') +
       `<text x="${x}" y="${y + 3.5}" text-anchor="middle" font-family="Spline Sans Mono, monospace" font-size="9" font-weight="600" fill="${inkOn(col)}">${letters.get(col) || ''}</text>`;
   };
-  state.strands.forEach((col, c) => parts.push(chip(c, col, yB(0) - 22)));
-  sol.endOrder.forEach((col, c) => parts.push(chip(c, col, yB(rows) + 22)));
+  strands.forEach((col, c) => parts.push(chip(c, col, yB(0) - 22, state.strands[c] == null)));
+  sol.endOrder.forEach((col, c) => parts.push(chip(c, col, yB(rows) + 22, false)));
 
   svg.innerHTML = parts.join('');
 }
@@ -456,12 +501,14 @@ function renderLegend() {
 
 /* ════════════════ strand editor & palette ════════════════ */
 
+/* hex = null makes the bobbin "auto": the solver picks its color from the
+ * design. Recoloring a bobbin whose old color no other bobbin has repaints
+ * that color's cells, so the drawing follows the thread. */
 function setStrandColor(i, hex) {
   const old = state.strands[i];
   if (old === hex) return;
   state.strands[i] = hex;
-  if (!state.strands.includes(old)) {
-    // color left the palette entirely: repaint its cells to the new color
+  if (old != null && hex != null && !state.strands.includes(old)) {
     for (const row of state.grid) {
       for (let j = 0; j < row.length; j++) if (row[j] === old) row[j] = hex;
     }
@@ -469,27 +516,46 @@ function setStrandColor(i, hex) {
   afterSetupChange();
 }
 
-/* ── strand color popover: 20 floss swatches + custom ── */
+function setAllAuto() {
+  // keep the colors paintable: they move from the bobbins into the palette
+  for (const c of state.strands) if (c != null && !state.extra.includes(c)) state.extra.push(c);
+  state.strands = state.strands.map(() => null);
+  afterSetupChange();
+}
 
-let popStrand = -1;
+/* copy the solver's picks onto the auto bobbins, making them fixed */
+function lockSolved() {
+  const solved = solvedStrands();
+  if (!solved || !hasAuto()) return;
+  state.strands = state.strands.map((c, i) => (c == null ? solved[i] : c));
+  afterSetupChange();
+}
+
+/* ── color popover: 20 floss swatches + custom (+ auto for bobbins) ──
+ * opts: { current, allowAuto, onPick(hex, done) } — done is false while the
+ * custom picker is still being dragged. */
+
 let popOpenedAt = 0;
 
-function openColorPop(i, anchor) {
+function openColorPop(anchor, opts) {
   const pop = $('color-pop');
-  popStrand = i;
   pop.innerHTML = '';
 
   const grid = document.createElement('div');
   grid.className = 'pop-grid';
+  if (opts.allowAuto) {
+    const a = document.createElement('button');
+    a.className = 'chip auto' + (opts.current == null ? ' active' : '');
+    a.title = 'auto — let the solver pick this strand\u2019s color from the design';
+    a.addEventListener('click', () => { opts.onPick(null, true); closeColorPop(); });
+    grid.appendChild(a);
+  }
   Object.entries(FLOSS).forEach(([name, hex]) => {
     const b = document.createElement('button');
-    b.className = 'chip' + (state.strands[i] === hex ? ' active' : '');
+    b.className = 'chip' + (opts.current === hex ? ' active' : '');
     b.style.background = hex;
     b.title = name;
-    b.addEventListener('click', () => {
-      setStrandColor(popStrand, hex);
-      closeColorPop();
-    });
+    b.addEventListener('click', () => { opts.onPick(hex, true); closeColorPop(); });
     grid.appendChild(b);
   });
   pop.appendChild(grid);
@@ -499,8 +565,8 @@ function openColorPop(i, anchor) {
   custom.append('custom…');
   const inp = document.createElement('input');
   inp.type = 'color';
-  inp.value = state.strands[i];
-  inp.addEventListener('input', () => setStrandColor(popStrand, inp.value));
+  inp.value = opts.current || '#888888';
+  inp.addEventListener('input', () => opts.onPick(inp.value, false));
   custom.appendChild(inp);
   pop.appendChild(custom);
 
@@ -514,7 +580,6 @@ function openColorPop(i, anchor) {
 
 function closeColorPop() {
   $('color-pop').hidden = true;
-  popStrand = -1;
 }
 
 function renderStrands() {
@@ -525,18 +590,42 @@ function renderStrands() {
   list.innerHTML = '';
   state.strands.forEach((col, i) => {
     const b = document.createElement('button');
-    b.className = 'bobbin';
-    b.style.background = col;
+    b.className = 'bobbin' + (col == null ? ' auto' : '');
     b.dataset.n = i + 1;
     b.dataset.i = i;
-    b.title = `strand ${i + 1} — ${col} (click to recolor, drag to reorder)`;
     b.addEventListener('pointerdown', (ev) => startBobbinDrag(ev, b));
     b.addEventListener('click', () => {
       if (bobbinDragged) { bobbinDragged = false; return; }
-      openColorPop(+b.dataset.i, b);
+      const idx = +b.dataset.i;
+      openColorPop(b, {
+        current: state.strands[idx],
+        allowAuto: true,
+        onPick: (hex) => setStrandColor(idx, hex),
+      });
     });
     list.appendChild(b);
   });
+  updateBobbinGhosts();
+  $('btn-all-auto').disabled = !state.strands.some((c) => c != null);
+  $('btn-lock').disabled = !hasAuto();
+}
+
+/* bobbin faces: fixed color, or the solver's pick ghosted onto an auto bobbin */
+function updateBobbinGhosts() {
+  const solved = solvedStrands();
+  for (const b of $('strand-list').children) {
+    const i = +b.dataset.i;
+    const col = state.strands[i];
+    if (col != null) {
+      b.style.background = col;
+      b.title = `strand ${i + 1} — ${col} (click to recolor, drag to reorder)`;
+    } else {
+      const pick = solved ? solved[i] : null;
+      b.style.background = pick || 'transparent';
+      b.title = `strand ${i + 1} — auto` + (pick ? `, solver chose ${pick}` : '') +
+        ' (click to set a color, drag to reorder)';
+    }
+  }
 }
 
 /* ── drag bobbins to reorder the starting threads ── */
@@ -583,7 +672,7 @@ function startBobbinDrag(ev, el) {
 function renderPalette() {
   const pal = $('palette');
   pal.innerHTML = '';
-  const colors = distinctColors();
+  const colors = paletteColors();
   if (!colors.includes(state.activeColor)) state.activeColor = colors[0];
   colors.forEach((col) => {
     const b = document.createElement('button');
@@ -595,13 +684,52 @@ function renderPalette() {
       if (state.tool === 'erase') setTool('brush');
       renderPalette();
     });
-    pal.appendChild(b);
+    if (isRemovableExtra(col)) {
+      // unused added color: wrap it with a small × to take it back out
+      const wrap = document.createElement('span');
+      wrap.className = 'chip-wrap';
+      wrap.appendChild(b);
+      const x = document.createElement('button');
+      x.className = 'chip-x';
+      x.textContent = '×';
+      x.title = 'remove this unused color';
+      x.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        state.extra = state.extra.filter((c) => c !== col);
+        renderPalette();
+        persist();
+      });
+      wrap.appendChild(x);
+      pal.appendChild(wrap);
+    } else {
+      pal.appendChild(b);
+    }
   });
   const auto = document.createElement('button');
   auto.className = 'chip auto' + (state.tool === 'erase' ? ' active' : '');
   auto.title = 'auto (erase) — solver picks';
   auto.addEventListener('click', () => setTool('erase'));
   pal.appendChild(auto);
+  const add = document.createElement('button');
+  add.className = 'chip add';
+  add.textContent = '+';
+  add.title = 'add a paint color (an auto bobbin can take it)';
+  add.addEventListener('click', () => {
+    let added = null; // the custom picker streams values: replace, don't pile up
+    openColorPop(add, {
+      current: null,
+      allowAuto: false,
+      onPick: (hex) => {
+        if (added && added !== hex) state.extra = state.extra.filter((c) => c !== added || !isRemovableExtra(c));
+        if (!state.extra.includes(hex)) state.extra.push(hex);
+        added = hex;
+        state.activeColor = hex;
+        if (state.tool === 'erase') setTool('brush'); else renderPalette();
+        persist();
+      },
+    });
+  });
+  pal.appendChild(add);
 }
 
 function setTool(tool) {
@@ -629,7 +757,7 @@ function renderAsciiMap() {
   const text = $('ascii-text').value;
   const chars = [];
   for (const ch of text) if (ch !== ' ' && ch !== '\n' && ch !== '\r' && ch !== '.' && !chars.includes(ch)) chars.push(ch);
-  const colors = distinctColors();
+  const colors = paletteColors();
   const box = $('ascii-map');
   box.innerHTML = '';
   chars.slice(0, 12).forEach((ch, i) => {
@@ -727,8 +855,10 @@ function exportInstructions() {
   const lines = [];
   lines.push('FRIENDSHIP LOOM — weaving instructions');
   lines.push('');
-  lines.push('Threads, left to right:');
-  lines.push('  ' + state.strands.map((c, i) => `${i + 1}:${letters.get(c)}(${c})`).join('  '));
+  const strands = sol.strands || state.strands;
+  const anyAuto = hasAuto();
+  lines.push('Threads, left to right' + (anyAuto ? ' (* = color chosen by the solver)' : '') + ':');
+  lines.push('  ' + strands.map((c, i) => `${i + 1}:${letters.get(c)}(${c})${state.strands[i] == null ? '*' : ''}`).join('  '));
   lines.push('');
   lines.push('Knots: F = forward (cross, shows left thread), B = backward (cross, shows right),');
   lines.push('       FB = forward-backward (bounce, shows left), BF = backward-forward (bounce, shows right).');
@@ -747,7 +877,7 @@ function exportInstructions() {
 }
 
 function savePattern() {
-  const data = { app: 'friendship-loom', version: 1, strands: state.strands, rows: state.rows, startParity: state.startParity, grid: state.grid };
+  const data = { app: 'friendship-loom', version: 2, strands: state.strands, extra: state.extra, rows: state.rows, startParity: state.startParity, grid: state.grid };
   download('bracelet-pattern.json', new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }));
 }
 
@@ -755,7 +885,8 @@ function loadPattern(file) {
   file.text().then((txt) => {
     const data = JSON.parse(txt);
     if (!Array.isArray(data.strands) || typeof data.rows !== 'number') throw new Error('bad file');
-    state.strands = data.strands.slice(0, 30);
+    state.strands = cleanStrands(data.strands);
+    state.extra = cleanColors(data.extra);
     state.rows = Math.max(2, Math.min(100, data.rows));
     state.startParity = data.startParity === 1 ? 1 : 0;
     state.grid = Array.isArray(data.grid) ? data.grid : [];
@@ -768,12 +899,17 @@ function loadPattern(file) {
 
 /* ════════════════ persistence ════════════════ */
 
+const isHex = (c) => typeof c === 'string' && /^#[0-9a-f]{3}([0-9a-f]{3})?$/i.test(c);
+/* strands from a file/autosave: hex or null (auto), at most 30 */
+const cleanStrands = (arr) => arr.slice(0, 30).map((c) => (isHex(c) ? c : null));
+const cleanColors = (arr) => (Array.isArray(arr) ? arr.filter(isHex).slice(0, 30) : []);
+
 let persistTimer = null;
 function persist() {
   clearTimeout(persistTimer);
   persistTimer = setTimeout(() => {
     try {
-      localStorage.setItem('floom-v1', JSON.stringify({ strands: state.strands, rows: state.rows, startParity: state.startParity, grid: state.grid }));
+      localStorage.setItem('floom-v1', JSON.stringify({ strands: state.strands, extra: state.extra, rows: state.rows, startParity: state.startParity, grid: state.grid }));
     } catch (e) { /* storage full or blocked — losing autosave is fine */ }
   }, 400);
 }
@@ -783,7 +919,8 @@ function restore() {
     const raw = localStorage.getItem('floom-v1');
     if (!raw) return;
     const data = JSON.parse(raw);
-    if (Array.isArray(data.strands) && data.strands.length >= 2) state.strands = data.strands.slice(0, 30);
+    if (Array.isArray(data.strands) && data.strands.length >= 2) state.strands = cleanStrands(data.strands);
+    state.extra = cleanColors(data.extra);
     if (typeof data.rows === 'number') state.rows = Math.max(2, Math.min(100, data.rows));
     if (data.startParity === 0 || data.startParity === 1) state.startParity = data.startParity;
     if (Array.isArray(data.grid)) state.grid = data.grid;
@@ -822,6 +959,8 @@ function bindControls() {
     state.startParity = 1 - state.startParity;
     afterSetupChange();
   });
+  $('btn-all-auto').addEventListener('click', setAllAuto);
+  $('btn-lock').addEventListener('click', lockSolved);
   $('preset').addEventListener('change', (ev) => {
     const p = PRESETS[ev.target.value];
     ev.target.value = '';
@@ -883,7 +1022,7 @@ function bindControls() {
   document.addEventListener('pointerdown', (ev) => {
     const pop = $('color-pop');
     if (pop.hidden || performance.now() - popOpenedAt < 150) return;
-    if (!pop.contains(ev.target) && !ev.target.closest('.bobbin')) closeColorPop();
+    if (!pop.contains(ev.target) && !ev.target.closest('.bobbin, .chip.add')) closeColorPop();
   });
 }
 

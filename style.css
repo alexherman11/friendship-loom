@@ -217,6 +217,29 @@ summary.tag { cursor: pointer; user-select: none; }
   color: var(--ink);
 }
 
+/* auto bobbin: dashed outline, the solver's pick shows through faded */
+.bobbin.auto {
+  border: 1.5px dashed var(--muted);
+  background-clip: padding-box;
+  box-shadow: inset 0 -13px 0 rgba(255, 255, 255, 0.55), inset 0 -14px 0 rgba(0, 0, 0, 0.12),
+    inset 0 0 0 40px rgba(251, 250, 246, 0.45);
+}
+.bobbin.auto::before {
+  content: "?";
+  position: absolute;
+  top: 3px; left: 0; right: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--ink);
+  opacity: 0.6;
+}
+
+.strand-actions { margin-top: 10px; }
+.btn:disabled { opacity: 0.45; cursor: default; }
+.btn:disabled:hover { background: var(--panel-deep); border-color: var(--seam-dark); }
+
 /* strand color popover */
 .color-pop {
   position: fixed;
@@ -277,6 +300,34 @@ summary.tag { cursor: pointer; user-select: none; }
     repeating-linear-gradient(45deg, transparent 0 4px, rgba(141, 131, 117, 0.35) 4px 6px),
     var(--panel);
 }
+.chip.add {
+  background: var(--panel);
+  border-style: dashed;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+}
+.chip.add:hover { color: var(--ink); border-color: var(--muted); }
+
+/* an added-but-unused paint color carries a small × on hover */
+.chip-wrap { position: relative; display: inline-flex; }
+.chip-x {
+  position: absolute;
+  top: -7px; right: -7px;
+  width: 15px; height: 15px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--seam-dark);
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 13px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.chip-wrap:hover .chip-x, .chip-x:focus-visible { opacity: 1; }
+.chip-x:hover { color: var(--err); border-color: var(--err); }
 
 .zoom { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; margin-left: auto; }
 .zoom input { width: 90px; accent-color: var(--accent); }

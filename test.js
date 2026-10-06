@@ -212,5 +212,69 @@ check('total misses across all 30-strand noise patterns <= 3', wideMisses <= 3,
   check('checkerboard solves', res.errors === 0, `errors=${res.errors}`);
 }
 
+/* 8. Wildcard strands (null): the solver picks the starting colors/order.
+ *    Every weavable target must still solve exactly with ALL strands left
+ *    open, with half open, and with a sparse (mostly auto) target; the
+ *    resolved `strands` must be concrete and re-weave to the same grid. */
+{
+  _seed = 808080 >>> 0;
+  const modes = ['all', 'half', 'sparse'];
+  const bad = {};
+  for (let iter = 0; iter < 45; iter++) {
+    const mode = modes[iter % 3];
+    const n = [4, 6, 8, 10, 12, 16][rnd(6)];
+    const rows = 6 + rnd(24);
+    const nColors = 2 + rnd(4);
+    const real = Array.from({ length: n }, () => PALETTE[rnd(nColors)]);
+    const target = randomWeave(real, rows);
+    if (mode === 'sparse') for (const row of target) for (let j = 0; j < row.length; j++) if (rand() < 0.5) row[j] = null;
+    const strands = mode === 'half' ? real.map((c, i) => (i % 2 ? null : c)) : real.map(() => null);
+    const res = Solver.solve({ strands, rows, target });
+    let ok = res.errors === 0 && res.strands.length === n && res.strands.every((c) => typeof c === 'string');
+    // fixed strands must be kept as given
+    strands.forEach((c, i) => { if (c != null && res.strands[i] !== c) ok = false; });
+    // re-weave from the resolved start and compare
+    const rp = Solver.replay(res.strands, res.knots);
+    for (let r = 0; r < rows; r++) rp.knots[r].forEach((k, j) => {
+      if (k.shown !== res.knots[r][j].shown) ok = false;
+      if (k.target != null && k.shown !== k.target && !k.err) ok = false;
+    });
+    if (JSON.stringify(rp.endOrder) !== JSON.stringify(res.endOrder)) ok = false;
+    if (!ok) { bad[mode] = (bad[mode] || 0) + 1; console.log(`  wildcard ${mode} iter=${iter} n=${n} rows=${rows} errors=${res.errors}`); }
+  }
+  for (const mode of modes) check(`wildcard strands (${mode}) solve exactly and replay consistently`, !bad[mode]);
+}
+
+/* 8b. Wildcards cannot rescue a genuinely impossible design: two strands
+ *     can only ever show two colors, so a third painted color must fail. */
+{
+  const target = [['#d63a55'], [], ['#3a7bd6'], [], ['#f5e04b']];
+  const res = Solver.solve({ strands: [null, null], rows: 5, target });
+  check('wildcards still flag impossible cells', res.errors === 1, `errors=${res.errors}`);
+}
+
+/* 8c. Checkerboard with every strand open: the solver must discover the
+ *     alternating start order by itself. */
+{
+  const A = '#d63a55', B = '#3a7bd6';
+  const rows = 16;
+  const target = Array.from({ length: rows }, (_, r) =>
+    Solver.pairStarts(8, r % 2).map((c, j) => ((r + j) % 2 === 0 ? A : B)));
+  const res = Solver.solve({ strands: Array(8).fill(null), rows, target });
+  check('checkerboard with open strands solves', res.errors === 0, `errors=${res.errors}`);
+  const counts = res.strands.reduce((m, c) => (m[c] = (m[c] || 0) + 1, m), {});
+  check('...using both colors', counts[A] === 4 && counts[B] === 4, JSON.stringify(counts));
+}
+
+/* 8d. Wildcards the design never needs take the most-painted color, and the
+ *     fast (interactive) path resolves them too. */
+{
+  const target = [[null, '#3a7bd6', null], [null, null], [null, '#3a7bd6', null], [null, null]];
+  const res = Solver.solve({ strands: [null, '#d63a55', null, null, null, null], rows: 4, target, effort: 'fast' });
+  check('unneeded wildcards default to the most painted color',
+    res.errors === 0 && res.strands[1] === '#d63a55' && res.strands.every((c) => c === '#d63a55' || c === '#3a7bd6'),
+    res.strands.join(','));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
