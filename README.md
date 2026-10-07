@@ -1,5 +1,26 @@
 # Friendship Loom
 
+Inspired by my roommate, I got into making simple friendship bracelets for my friends, though initially I 
+was impressed and intimidated by the complexity of designs that could be found on sites like 
+friendship-bracelets.net (due likely to their simple and useful knots->pattern solver shown below).
+
+<img width="468" height="474" alt="image" src="https://github.com/user-attachments/assets/d740b3d8-113a-4feb-b3a6-85d4d6f6e9c2" />
+
+However, when I started an ambitious project of 19 strands and wanted to create arbitrary
+pixel art, I realized there was a gap between pixel art -> weaving pattern. Complex patterns, i realized, 
+do not have obvious ways of weaving them, though undoubtedly with lots of experience or tinkering you could 
+generate anything manually. However this felt like a blocker and I created Friendship Loom.
+
+<img width="1019" height="742" alt="image" src="https://github.com/user-attachments/assets/5900901f-0883-44e9-9906-66674edc45d6" />
+
+With Claude, I designed this friendly solver which can take any artwork and starting strand
+arrangement, and convert it into a pattern that is easy to read. It prefers crossing knots
+and patterns that end up the same as they started. It is currently up for anyone to use for
+free at 
+
+https://friendship-loom-production.up.railway.app/
+
+
 Draw pixel art (or stamp ASCII art), and get a
 [friendship-bracelets.net](https://friendship-bracelets.net)-style knot diagram
 that weaves it — for up to 30 starting strands.
